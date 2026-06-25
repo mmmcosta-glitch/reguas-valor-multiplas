@@ -1,40 +1,94 @@
-const fs   = require('fs');
-const path = require('path');
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Réguas de Valor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; background: #ffffff; padding: 24px 16px; }
+  #setup-screen { display: flex; flex-direction: column; align-items: center; gap: 20px; padding-top: 60px; }
+  #setup-screen h1 { font-size: 18px; font-weight: 700; color: #222; }
+  #setup-screen label { font-size: 13px; font-weight: 600; color: #444; }
+  #setup-screen input[type="number"] { width: 80px; padding: 6px 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; text-align: center; }
+  #name-fields { display: flex; flex-direction: column; gap: 10px; width: 320px; }
+  #name-fields input[type="text"] { width: 100%; padding: 7px 12px; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; }
+  #name-fields input[type="text"]::placeholder { color: #aaa; }
+  button { padding: 9px 28px; font-size: 14px; font-weight: 600; background: #4bb4e6; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  button:hover { background: #2da0d8; }
+  #loading-screen { display: none; flex-direction: column; align-items: center; justify-content: center; padding-top: 100px; gap: 16px; color: #888; font-size: 14px; }
+  .spinner { width: 36px; height: 36px; border: 4px solid #ddd; border-top-color: #4bb4e6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #rulers-screen { display: none; }
+  #rulers-wrap { display: flex; flex-direction: row; align-items: flex-start; gap: 48px; flex-wrap: wrap; justify-content: center; padding-top: 16px; }
+  .ruler-col { display: flex; flex-direction: column; align-items: center; }
+  .ruler-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #222; text-align: center; margin-bottom: 10px; }
+  .ruler-body { display: flex; flex-direction: row; align-items: flex-start; }
+  .labels-left { width: 60px; position: relative; flex-shrink: 0; }
+  .label-left { position: absolute; right: 8px; text-align: right; transform: translateY(-50%); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+  .stick-area { width: 50px; position: relative; flex-shrink: 0; display: flex; justify-content: center; }
+  .stick-bar { position: absolute; width: 10px; left: 50%; transform: translateX(-50%); background: #d3d3d3; border-radius: 6px; z-index: 1; }
+  .handle { position: absolute; width: 36px; height: 14px; border-radius: 3px; left: 50%; transform: translate(-50%, -50%); cursor: grab; border: 1px solid rgba(0,0,0,0.15); }
+  .handle:active { cursor: grabbing; }
+  .handle-wtp { background: #4bb4e6; z-index: 20; }
+  .handle-dpc { background: #e34b4b; z-index: 20; }
+  .handle-cp  { background: #55b96c; z-index: 10; }
+  .handle-sp  { background: #333333; z-index: 10; }
+  #btn-reset { display: block; margin: 24px auto 0; background: #aaa; font-size: 12px; padding: 6px 18px; }
+  #btn-reset:hover { background: #888; }
+</style>
+</head>
+<body>
 
-// Arquivo de estado em /tmp (área de escrita das funções)
-const FILE = path.join('/tmp', 'regua-valor-state.json');
+<div id="setup-screen">
+  <h1>Régua de Valor</h1>
+  <div style="display:flex;align-items:center;gap:12px;">
+    <label for="qty-input">Quantidade de réguas:</label>
+    <input type="number" id="qty-input" min="1" max="8" value="1" />
+  </div>
+  <div id="name-fields"></div>
+  <button id="btn-generate">Gerar réguas</button>
+</div>
 
-exports.handler = async function(event) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json'
-  };
+<div id="loading-screen">
+  <div class="spinner"></div>
+  <span>Carregando...</span>
+</div>
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
+<div id="rulers-screen">
+  <div id="rulers-wrap"></div>
+  <button id="btn-reset">← Recomeçar</button>
+</div>
 
-  if (event.httpMethod === 'GET') {
-    try {
-      if (fs.existsSync(FILE)) {
-        const data = fs.readFileSync(FILE, 'utf8');
-        return { statusCode: 200, headers, body: data };
-      }
-      return { statusCode: 200, headers, body: '{}' };
-    } catch (e) {
-      return { statusCode: 200, headers, body: '{}' };
-    }
-  }
-
-  if (event.httpMethod === 'POST') {
-    try {
-      fs.writeFileSync(FILE, event.body || '{}', 'utf8');
-      return { statusCode: 200, headers, body: '{"ok":true}' };
-    } catch (e) {
-      return { statusCode: 500, headers, body: '{"ok":false}' };
-    }
-  }
-
-  return { statusCode: 405, headers, body: '{"error":"method not allowed"}' };
-};
+<script>
+const TOTAL_H=500,MARGIN_TOP=10,MARGIN_BOT=10,MIN_SEG=20,RULER_TOP=50,RULER_BOT=450,STEP=(RULER_BOT-RULER_TOP)/3;
+function defaultPos(){return{wtp:RULER_TOP,cp:RULER_TOP+STEP,sp:RULER_TOP+STEP*2,dpc:RULER_BOT};}
+let allPos={},rulerNames=[],saveTimer=null;
+async function remoteLoad(){try{const r=await fetch('/.netlify/functions/state');if(!r.ok)return{};return await r.json();}catch(e){return{};}}
+async function remoteSave(d){try{await fetch('/.netlify/functions/state',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});}catch(e){}}
+function scheduleSave(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{remoteSave({names:rulerNames,pos:allPos});},600);}
+function showScreen(id){['setup-screen','loading-screen','rulers-screen'].forEach(s=>{const el=document.getElementById(s);if(el)el.style.display='none';});const el=document.getElementById(id);if(!el)return;el.style.display=(id==='rulers-screen')?'block':'flex';}
+const qtyInput=document.getElementById('qty-input');
+const nameFields=document.getElementById('name-fields');
+function updateNameFields(){const qty=Math.max(1,Math.min(8,parseInt(qtyInput.value)||1));nameFields.innerHTML='';for(let i=0;i<qty;i++){const inp=document.createElement('input');inp.type='text';inp.placeholder=`Nome da régua ${i+1}`;inp.id=`ruler-name-${i}`;if(rulerNames[i])inp.value=rulerNames[i];nameFields.appendChild(inp);}}
+qtyInput.addEventListener('input',updateNameFields);
+updateNameFields();
+document.getElementById('btn-generate').addEventListener('click',async()=>{const qty=Math.max(1,Math.min(8,parseInt(qtyInput.value)||1));rulerNames=[];for(let i=0;i<qty;i++){const inp=document.getElementById(`ruler-name-${i}`);const name=(inp&&inp.value.trim())?inp.value.trim():`Régua ${i+1}`;rulerNames.push(name);if(!allPos[name])allPos[name]=defaultPos();}showScreen('loading-screen');await remoteSave({names:rulerNames,pos:allPos});buildRulers();showScreen('rulers-screen');});
+document.getElementById('btn-reset').addEventListener('click',async()=>{rulerNames=[];allPos={};document.getElementById('rulers-wrap').innerHTML='';qtyInput.value=1;updateNameFields();showScreen('loading-screen');await remoteSave({});showScreen('setup-screen');});
+function buildRulers(){const wrap=document.getElementById('rulers-wrap');wrap.innerHTML='';rulerNames.forEach((name,index)=>{const isFirst=index===0;const col=document.createElement('div');col.className='ruler-col';col.dataset.ruler=name;const title=document.createElement('div');title.className='ruler-title';title.textContent=name;col.appendChild(title);const body=document.createElement('div');body.className='ruler-body';if(isFirst){const labelsLeft=document.createElement('div');labelsLeft.className='labels-left';labelsLeft.style.height=TOTAL_H+'px';[{key:'wtp',text:'DPP',color:'#4bb4e6'},{key:'cp',text:'PREÇO',color:'#55b96c'},{key:'sp',text:'CUSTO',color:'#333333'},{key:'dpc',text:'DPC',color:'#e34b4b'}].forEach(def=>{const lbl=document.createElement('div');lbl.className='label-left';lbl.id=`ll-${name}-${def.key}`;lbl.style.color=def.color;lbl.textContent=def.text;labelsLeft.appendChild(lbl);});body.appendChild(labelsLeft);}const stickArea=document.createElement('div');stickArea.className='stick-area';stickArea.style.height=TOTAL_H+'px';const bar=document.createElement('div');bar.className='stick-bar';bar.id=`bar-${name}`;stickArea.appendChild(bar);[{key:'wtp',cls:'handle-wtp'},{key:'cp',cls:'handle-cp'},{key:'sp',cls:'handle-sp'},{key:'dpc',cls:'handle-dpc'}].forEach(def=>{const h=document.createElement('div');h.className=`handle ${def.cls}`;h.id=`h-${name}-${def.key}`;h.dataset.ruler=name;h.dataset.handle=def.key;stickArea.appendChild(h);});body.appendChild(stickArea);col.appendChild(body);wrap.appendChild(col);renderRuler(name,isFirst);});attachDragListeners();}
+function renderRuler(name,isFirst){if(isFirst===undefined)isFirst=(rulerNames[0]===name);const p=allPos[name];if(!p)return;const bar=document.getElementById(`bar-${name}`);if(bar){bar.style.top=p.wtp+'px';bar.style.height=(p.dpc-p.wtp)+'px';}['wtp','cp','sp','dpc'].forEach(k=>{const h=document.getElementById(`h-${name}-${k}`);if(h)h.style.top=p[k]+'px';});if(isFirst){['wtp','cp','sp','dpc'].forEach(k=>{const l=document.getElementById(`ll-${name}-${k}`);if(l)l.style.top=p[k]+'px';});}}
+let dragging=null,dragStartY=0,dragStartP=0;
+function attachDragListeners(){document.querySelectorAll('.handle').forEach(el=>{el.addEventListener('mousedown',onHandleDown);el.addEventListener('touchstart',onHandleTouch,{passive:false});});}
+function onHandleDown(e){dragging={name:e.currentTarget.dataset.ruler,key:e.currentTarget.dataset.handle};dragStartY=e.clientY;dragStartP=allPos[dragging.name][dragging.key];e.preventDefault();}
+function onHandleTouch(e){dragging={name:e.currentTarget.dataset.ruler,key:e.currentTarget.dataset.handle};dragStartY=e.touches[0].clientY;dragStartP=allPos[dragging.name][dragging.key];e.preventDefault();}
+function clamp(v,mn,mx){return Math.max(mn,Math.min(mx,v));}
+function onMove(clientY){if(!dragging)return;const{name,key}=dragging;const p=allPos[name];const dy=clientY-dragStartY;let nv=dragStartP+dy;if(key==='wtp')nv=clamp(nv,MARGIN_TOP,p.dpc-MIN_SEG);else if(key==='dpc')nv=clamp(nv,p.wtp+MIN_SEG,TOTAL_H-MARGIN_BOT);else if(key==='cp')nv=clamp(nv,MARGIN_TOP,p.sp-MIN_SEG);else if(key==='sp')nv=clamp(nv,p.cp+MIN_SEG,TOTAL_H-MARGIN_BOT);p[key]=nv;renderRuler(name);}
+function onEnd(){if(dragging)scheduleSave();dragging=null;}
+document.addEventListener('mousemove',e=>onMove(e.clientY));
+document.addEventListener('touchmove',e=>onMove(e.touches[0].clientY),{passive:false});
+document.addEventListener('mouseup',onEnd);
+document.addEventListener('touchend',onEnd);
+(async()=>{showScreen('loading-screen');const data=await remoteLoad();if(data.names&&data.names.length>0&&data.pos){rulerNames=data.names;allPos=data.pos;rulerNames.forEach(name=>{if(!allPos[name])allPos[name]=defaultPos();});qtyInput.value=rulerNames.length;updateNameFields();buildRulers();showScreen('rulers-screen');}else{showScreen('setup-screen');}})();
+</script>
+</body>
+</html>
